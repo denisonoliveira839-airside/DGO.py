@@ -1,0 +1,59 @@
+import math
+
+def calcular_corrente(tipo, potencia_kw, tensao, fp=0.92, rendimento=0.9):
+
+    if tipo == "motor":
+        corrente = (potencia_kw * 1000) / (math.sqrt(3) * tensao * fp * rendimento)
+    else:
+        corrente = (potencia_kw * 1000) / (math.sqrt(3) * tensao)
+
+    return round(corrente, 2)
+
+
+def selecionar_disjuntor(corrente):
+    corrente_projeto = corrente * 1.25
+    
+    padrao = [6,10,16,20,25,32,40,50,63,80,100,125,160]
+    
+    for dj in padrao:
+        if dj >= corrente_projeto:
+            return dj
+
+
+def selecionar_cabo(corrente):
+    tabela = {
+        10: 1.5,
+        16: 2.5,
+        25: 4,
+        32: 6,
+        40: 10,
+        63: 16,
+        80: 25,
+        100: 35,
+        125: 50
+    }
+    
+    for limite, bitola in tabela.items():
+        if corrente <= limite:
+            return bitola
+
+
+# ======== TESTE ========
+
+tipo = "motor"
+potencia = 7.5
+tensao = 380
+
+corrente = calcular_corrente(tipo, potencia, tensao)
+
+dj = selecionar_disjuntor(corrente)
+cabo = selecionar_cabo(corrente)
+
+print("Corrente calculada:", corrente, "A")
+print("Disjuntor recomendado:", dj, "A")
+print("Bitola recomendada:", cabo, "mm²")
+
+print("\nEstrutura Multifilar Potência:")
+print("L1 ─ DJ ─ KM1 ─ RT1 ─ CARGA")
+print("L2 ─ DJ ─ KM1 ─ RT1 ─ CARGA")
+print("L3 ─ DJ ─ KM1 ─ RT1 ─ CARGA")
