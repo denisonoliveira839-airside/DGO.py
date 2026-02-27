@@ -1,24 +1,32 @@
+import streamlit as st
 import math
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+from reportlab.platypus import Table
+from reportlab.lib.styles import getSampleStyleSheet
+import os
 
-def calcular_corrente(tipo, potencia_kw, tensao, fp=0.92, rendimento=0.9):
+st.title("Configurador Técnico Interno - Fan Coil HVAC ⚙️")
 
-    if tipo == "motor":
-        corrente = (potencia_kw * 1000) / (math.sqrt(3) * tensao * fp * rendimento)
-    else:
-        corrente = (potencia_kw * 1000) / (math.sqrt(3) * tensao)
+# =========================
+# ENTRADA DE DADOS
+# =========================
 
-    return round(corrente, 2)
-
+tr = st.number_input("Capacidade (TR)", min_value=1.0)
+aplicacao = st.selectbox("Aplicação", ["Conforto", "Hospitalar", "Industrial"])
+tipo = st.selectbox("Tipo de Fan Coil", ["Horizontal", "Vertical", "Modular"])
+tensao = st.selectbox("Tensão (V)", [220, 380, 440])
+resistencia = st.number_input("Banco de Resistência (kW)", min_value=0.0)
+pressao = st.number_input("Pressão Estática (mmCA)", min_value=10.0, value=30.0)
 
 def selecionar_disjuntor(corrente):
     corrente_projeto = corrente * 1.25
-    
     padrao = [6,10,16,20,25,32,40,50,63,80,100,125,160]
-    
     for dj in padrao:
         if dj >= corrente_projeto:
             return dj
-
 
 def selecionar_cabo(corrente):
     tabela = {
@@ -32,28 +40,98 @@ def selecionar_cabo(corrente):
         100: 35,
         125: 50
     }
-    
     for limite, bitola in tabela.items():
         if corrente <= limite:
             return bitola
 
+if st.button("Gerar Projeto Completo"):
 
-# ======== TESTE ========
+    capacidade_kw = tr * 3.517
 
-tipo = "motor"
-potencia = 7.5
-tensao = 380
+    if aplicacao == "Conforto":
+        vazao = tr * 1200
+        filtro = "G4"
+    elif aplicacao == "Hospitalar":
+        vazao = tr * 1400
+        filtro = "G4 + F7"
+    else:
+        vazao = tr * 1100
+        filtro = "G4 + M5"
 
-corrente = calcular_corrente(tipo, potencia, tensao)
+    eficiencia = 0.65
+    potencia_vent = (vazao * pressao) / (102 * eficiencia)
+    potencia_vent = potencia_vent / 1000
 
-dj = selecionar_disjuntor(corrente)
-cabo = selecionar_cabo(corrente)
+    corrente_motor = (potencia_vent * 1000) / (math.sqrt(3) * tensao * 0.9 * 0.92)
+    corrente_motor = round(corrente_motor,2)
 
-print("Corrente calculada:", corrente, "A")
-print("Disjuntor recomendado:", dj, "A")
-print("Bitola recomendada:", cabo, "mm²")
+    if resistencia > 0:
+        corrente_res = (resistencia * 1000) / (math.sqrt(3) * tensao)
+        corrente_res = round(corrente_res,2)
+    else:
+        corrente_res = 0
 
-print("\nEstrutura Multifilar Potência:")
-print("L1 ─ DJ ─ KM1 ─ RT1 ─ CARGA")
-print("L2 ─ DJ ─ KM1 ─ RT1 ─ CARGA")
-print("L3 ─ DJ ─ KM1 ─ RT1 ─ CARGA")
+    corrente_total = corrente_motor + corrente_res
+
+    dj_motor = selecionar_disjuntor(corrente_motor)
+    dj_res = selecionar_disjuntor(corrente_res) if corrente_res > 0 else "-"
+    dj_geral = selecionar_disjuntor(corrente_total)
+
+    cabo_motor = selecionar_cabo(corrente_motor)
+    cabo_res = selecionar_cabo(corrente_res) if corrente_res > 0 else "-"
+    cabo_geral = selecionar_cabo(corrente_total)
+
+    st.success("Projeto Calculado com Sucesso ⚡")
+
+    st.text_area("Resumo Técnico", f"""
+FAN COIL {tr} TR
+
+Capacidade: {round(capacidade_kw,2)} kW
+Vazão: {round(vazao,0)} m³/h
+Filtro: {filtro}
+
+Motor Ventilador:
+Potência: {round(potencia_vent,2)} kW
+Corrente: {corrente_motor} A
+Disjuntor: {dj_motor} A
+Cabo: {cabo_motor} mm²
+
+Resistência:
+Potência: {resistencia} kW
+Corrente: {corrente_res} A
+Disjuntor: {dj_res}
+Cabo: {cabo_res}
+
+Corrente Total: {round(corrente_total,2)} A
+Disjuntor Geral: {dj_geral} A
+Cabo Geral: {cabo_geral} mm²
+""", height=450)
+
+    # =========================
+    # GERA PDF
+    # =========================
+
+    pdf_path = "projeto_fancoil.pdf"
+    doc = SimpleDocTemplate(pdf_path)
+    elements = []
+
+    styles = getSampleStyleSheet()
+    elements.append(Paragraph("ESCOPO TÉCNICO FAN COIL", styles["Heading1"]))
+    elements.append(Spacer(1, 0.3 * inch))
+
+    tabela_dados = [
+        ["Capacidade (TR)", tr],
+        ["Vazão (m³/h)", round(vazao,0)],
+        ["Filtro", filtro],
+        ["Corrente Total (A)", round(corrente_total,2)],
+        ["Disjuntor Geral (A)", dj_geral],
+        ["Cabo Geral (mm²)", cabo_geral]
+    ]
+
+    table = Table(tabela_dados)
+    elements.append(table)
+
+    doc.build(elements)
+
+    with open(pdf_path, "rb") as f:
+        st.download_button("Baixar PDF do Projeto 📄", f, file_name="Projeto_Fan_Coil.pdf")
